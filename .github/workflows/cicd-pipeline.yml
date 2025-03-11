@@ -3,7 +3,7 @@ name: Deploy Django Application To EC2
 on:
   push:
     branches:
-      - main
+      - feature/create-cicd-pipeline
 
 jobs:
   build-docker-setup-infra:
