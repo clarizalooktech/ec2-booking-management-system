@@ -24,7 +24,7 @@ services:
     #   - redis_data:/data
 
   web:
-    image: ${DOCKER_REGISTRY:-}django-booking-app:${TAG:-latest}
+    image: django-booking-app:latest
     build:
       context: .
       args:
