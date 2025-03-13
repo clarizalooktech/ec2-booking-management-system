@@ -125,6 +125,17 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keygen -lf ~/.ssh/id_rsa || echo "Key verification failed"
 
+      - name: Create .env file for deployment
+        run: |
+          cat << EOF > .env
+          POSTGRES_DB=booking
+          POSTGRES_USER=pawsey
+          POSTGRES_PASSWORD=pawsey
+          DJANGO_SETTINGS_MODULE=booking_management.settings
+          DATABASE_URL=postgresql://pawsey:pawsey@db:5432/booking
+          REDIS_URL=redis://redis:6379/0
+          EOF
+
       - name: Copy Docker Compose Files
         env:
           INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
