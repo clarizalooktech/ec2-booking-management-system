@@ -41,6 +41,7 @@ db.sqlite3
 # Python virtual environments
 venv/
 env/
+.env
 
 # Pytest cache
 .pytest_cache/

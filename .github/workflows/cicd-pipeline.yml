@@ -40,6 +40,17 @@ jobs:
       #     docker build -t $REPOSITORY_URI:$IMAGE_TAG .
       #     docker push $REPOSITORY_URI:$IMAGE_TAG
 
+      - name: Create .env file
+        run: |
+          cat << EOF > .env
+          POSTGRES_DB=booking
+          POSTGRES_USER=pawsey
+          POSTGRES_PASSWORD=pawsey
+          DJANGO_SETTINGS_MODULE=booking_management.settings
+          DATABASE_URL=postgresql://pawsey:pawsey@db:5432/booking
+          REDIS_URL=redis://redis:6379/0
+          EOF
+
       - name: Build and Push Docker Images
         run: |
           # Build and push web application
