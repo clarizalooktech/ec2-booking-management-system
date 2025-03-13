@@ -15,6 +15,7 @@ jobs:
       REPOSITORY_URI: ${{ secrets.ECR_REPOSITORY_URI }}
       CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
       CDK_DEFAULT_REGION: ap-southeast-2
+      IMAGE_TAG: 1.1.0
 
     steps:
       - name: Checkout Code
@@ -33,13 +34,6 @@ jobs:
         with:
           mask-password: true
 
-      # - name: Build, Tag, and Push Docker Image
-      #   run: |
-      #     set -x
-      #     IMAGE_TAG=latest
-      #     docker build -t $REPOSITORY_URI:$IMAGE_TAG .
-      #     docker push $REPOSITORY_URI:$IMAGE_TAG
-
       - name: Create .env file
         run: |
           cat << EOF > .env
@@ -53,11 +47,16 @@ jobs:
 
       - name: Build and Push Docker Images
         run: |
-          # Build and push web application
+          # Build the application image
           docker compose build web
-          docker tag ${REPOSITORY_URI}/web:latest ${REPOSITORY_URI}/web:${GITHUB_SHA::7}
-          docker push ${REPOSITORY_URI}/web:latest
-          docker push ${REPOSITORY_URI}/web:${GITHUB_SHA::7}
+          
+          # Tag with version and latest
+          docker tag pawsey/ec2-provisioning:${IMAGE_TAG} ${REPOSITORY_URI}:${IMAGE_TAG}
+          docker tag pawsey/ec2-provisioning:${IMAGE_TAG} ${REPOSITORY_URI}:latest
+          
+          # Push both tags
+          docker push ${REPOSITORY_URI}:${IMAGE_TAG}
+          docker push ${REPOSITORY_URI}:latest
 
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -79,7 +78,7 @@ jobs:
       - name: Wait for EC2 Instance to be Ready
         id: wait-for-instance
         run: |
-          # Get the instance ID from CDK outputs if possible
+          # Get the instance ID from CDK outputs
           STACK_OUTPUTS=$(aws cloudformation describe-stacks --stack-name Ec2-Booking-Management-Stack --query "Stacks[0].Outputs" --output json)
           INSTANCE_ID=$(echo $STACK_OUTPUTS | jq -r '.[] | select(.OutputKey=="InstanceId") | .OutputValue')
           INSTANCE_IP=$(echo $STACK_OUTPUTS | jq -r '.[] | select(.OutputKey=="InstancePublicIp") | .OutputValue')
@@ -98,35 +97,6 @@ jobs:
           fi
 
           echo "Found instance $INSTANCE_ID with IP $INSTANCE_IP"
-
-          # Wait for the instance to be running
-          echo "Waiting for instance to be in running state..."
-          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
-
-          # Wait for status checks to pass
-          echo "Waiting for instance status checks to pass..."
-          aws ec2 wait instance-status-ok --instance-ids $INSTANCE_ID
-
-          # Extra verification of SSH availability
-          echo "Verifying SSH connectivity..."
-          counter=0
-          max_attempts=10
-          while [ $counter -lt $max_attempts ]; do
-            if nc -z -w5 $INSTANCE_IP 22; then
-              echo "SSH port is open!"
-              break
-            fi
-            echo "Waiting for SSH port to open... (attempt $((counter+1))/$max_attempts)"
-            sleep 10
-            counter=$((counter+1))
-          done
-
-          if [ $counter -eq $max_attempts ]; then
-            echo "Warning: Could not verify SSH connectivity after $max_attempts attempts"
-          fi
-
-          echo "Instance ID: $INSTANCE_ID"
-          echo "Instance IP: $INSTANCE_IP"
           echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
 
   deploy:
@@ -137,8 +107,8 @@ jobs:
       REPOSITORY_URI: ${{ secrets.ECR_REPOSITORY_URI }}
 
     steps:
-      - name: Debug Output IP
-        run: 'echo "Using IP address: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}"'
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
       - name: Install SSH Client
         run: sudo apt-get install -y openssh-client
@@ -151,33 +121,6 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keygen -lf ~/.ssh/id_rsa || echo "Key verification failed"
-
-      # - name: SSH into EC2 and Deploy Docker Image
-      #   env:
-      #     INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
-      #     REPO_URI: ${{ secrets.ECR_REPOSITORY_URI }}
-      #   run: |
-      #     ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=30 ec2-user@${INSTANCE_IP} "
-      #       # Check what's using port 80
-      #       echo 'Checking what process is using port 80...'
-      #       sudo lsof -i :80 || echo 'No process found by lsof'
-
-      #       # Stop App if it's running
-      #       sudo systemctl stop nginx || echo 'App not running or not installed'
-
-      #       # Kill any process using port 80
-      #       sudo fuser -k 80/tcp || echo 'No process killed'
-
-      #       # Stop any running Docker containers using port 80
-      #       sudo docker ps -q --filter publish=80 | xargs -r sudo docker stop
-      #       sudo docker ps -q --filter publish=80 | xargs -r sudo docker rm
-
-      #       # Start Docker and proceed with deployment
-      #       sudo systemctl start docker &&
-      #       sudo systemctl enable docker &&
-      #       aws ecr get-login-password --region ap-southeast-2 | sudo docker login --username AWS --password-stdin ${REPO_URI} &&
-      #       sudo docker pull ${REPO_URI}:latest &&
-      #       sudo docker run -d -p 80:80 ${REPO_URI}:latest"
 
       - name: Copy Docker Compose Files
         env:
