@@ -40,6 +40,14 @@ jobs:
       #     docker build -t $REPOSITORY_URI:$IMAGE_TAG .
       #     docker push $REPOSITORY_URI:$IMAGE_TAG
 
+      - name: Build and Push Docker Images
+        run: |
+          # Build and push web application
+          docker compose build web
+          docker tag ${REPOSITORY_URI}/web:latest ${REPOSITORY_URI}/web:${GITHUB_SHA::7}
+          docker push ${REPOSITORY_URI}/web:latest
+          docker push ${REPOSITORY_URI}/web:${GITHUB_SHA::7}
+
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
@@ -55,7 +63,8 @@ jobs:
 
       - name: Deploy CDK Stack
         working-directory: ./infra
-        run: cdk deploy --require-approval never
+        run: cdk synth
+      #    cdk deploy --require-approval never
 
       - name: Wait for EC2 Instance to be Ready
         id: wait-for-instance
@@ -68,10 +77,10 @@ jobs:
           # Fallback to searching by tag if outputs aren't available
           if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" == "null" ]; then
             echo "Looking up instance by tag..."
-            INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=NginxInstance" "Name=instance-state-name,Values=pending,running" --query "Reservations[0].Instances[0].InstanceId" --output text)
+            INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=DjangoInstance" "Name=instance-state-name,Values=pending,running" --query "Reservations[0].Instances[0].InstanceId" --output text)
 
             if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" == "None" ]; then
-              echo "Error: No running EC2 instance with tag 'NginxInstance' found."
+              echo "Error: No running EC2 instance with tag 'DjangoInstance' found."
               exit 1
             fi
 
@@ -133,29 +142,56 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keygen -lf ~/.ssh/id_rsa || echo "Key verification failed"
 
-      - name: SSH into EC2 and Deploy Docker Image
+      # - name: SSH into EC2 and Deploy Docker Image
+      #   env:
+      #     INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
+      #     REPO_URI: ${{ secrets.ECR_REPOSITORY_URI }}
+      #   run: |
+      #     ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=30 ec2-user@${INSTANCE_IP} "
+      #       # Check what's using port 80
+      #       echo 'Checking what process is using port 80...'
+      #       sudo lsof -i :80 || echo 'No process found by lsof'
+
+      #       # Stop App if it's running
+      #       sudo systemctl stop nginx || echo 'App not running or not installed'
+
+      #       # Kill any process using port 80
+      #       sudo fuser -k 80/tcp || echo 'No process killed'
+
+      #       # Stop any running Docker containers using port 80
+      #       sudo docker ps -q --filter publish=80 | xargs -r sudo docker stop
+      #       sudo docker ps -q --filter publish=80 | xargs -r sudo docker rm
+
+      #       # Start Docker and proceed with deployment
+      #       sudo systemctl start docker &&
+      #       sudo systemctl enable docker &&
+      #       aws ecr get-login-password --region ap-southeast-2 | sudo docker login --username AWS --password-stdin ${REPO_URI} &&
+      #       sudo docker pull ${REPO_URI}:latest &&
+      #       sudo docker run -d -p 80:80 ${REPO_URI}:latest"
+
+      - name: Copy Docker Compose Files
+        env:
+          INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
+        run: |
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.yml ec2-user@${INSTANCE_IP}:~/
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env ec2-user@${INSTANCE_IP}:~/
+
+      - name: SSH into EC2 and Deploy with Docker Compose
         env:
           INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
           REPO_URI: ${{ secrets.ECR_REPOSITORY_URI }}
         run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -o ConnectTimeout=30 ec2-user@${INSTANCE_IP} "
-            # Check what's using port 80
-            echo 'Checking what process is using port 80...'
-            sudo lsof -i :80 || echo 'No process found by lsof'
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@${INSTANCE_IP} "
+            # Login to ECR
+            aws ecr get-login-password --region ap-southeast-2 | sudo docker login --username AWS --password-stdin ${REPO_URI}
 
-            # Stop Nginx if it's running
-            sudo systemctl stop nginx || echo 'Nginx not running or not installed'
+            # Stop existing containers
+            sudo docker compose down || true
 
-            # Kill any process using port 80
-            sudo fuser -k 80/tcp || echo 'No process killed'
+            # Pull and start new containers
+            sudo docker compose pull
+            sudo docker compose up -d
 
-            # Stop any running Docker containers using port 80
-            sudo docker ps -q --filter publish=80 | xargs -r sudo docker stop
-            sudo docker ps -q --filter publish=80 | xargs -r sudo docker rm
-
-            # Start Docker and proceed with deployment
-            sudo systemctl start docker &&
-            sudo systemctl enable docker &&
-            aws ecr get-login-password --region ap-southeast-2 | sudo docker login --username AWS --password-stdin ${REPO_URI} &&
-            sudo docker pull ${REPO_URI}:latest &&
-            sudo docker run -d -p 80:80 ${REPO_URI}:latest"
+            # Clean up old images
+            sudo docker image prune -f
+          "

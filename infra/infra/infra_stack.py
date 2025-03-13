@@ -46,7 +46,64 @@ class Ec2BookingStack(Stack):
         )
 
         # Add a Name Tag to EC2 instance
-        Tags.of(ec2_instance).add("Name", "NginxInstance")
+        Tags.of(ec2_instance).add("Name", "Ec2BookingSystemInstance")
+
+        # Output the instance ID and public IP
+        CfnOutput(self, "InstanceId", value=ec2_instance.instance_id)
+        CfnOutput(self, "InstancePublicIp", value=ec2_instance.instance_public_ip)
+
+    from aws_cdk import (
+    Stack,
+    aws_ec2 as ec2,
+    aws_iam as iam,
+    Tags,
+    CfnOutput
+)
+from constructs import Construct
+
+class Ec2BookingStack(Stack):
+
+    def __init__(self, scope: Construct, id: str, **kwargs) -> None:
+        super().__init__(scope, id, **kwargs)
+
+        # Use the default VPC
+        vpc = ec2.Vpc.from_lookup(self, "DefaultVpc", is_default=True)
+
+        # Define the security group
+        security_group = ec2.SecurityGroup(self, "SecurityGroup",
+            vpc=vpc,
+            description="Allow SSH, HTTP, and application ports",
+            allow_all_outbound=True
+        )
+        security_group.add_ingress_rule(ec2.Peer.ipv4("0.0.0.0/0"), ec2.Port.tcp(22), "Allow SSH access")
+        security_group.add_ingress_rule(ec2.Peer.ipv4("0.0.0.0/0"), ec2.Port.tcp(80), "Allow HTTP access")
+        security_group.add_ingress_rule(ec2.Peer.ipv4("0.0.0.0/0"), ec2.Port.tcp(8001), "Allow Django port")
+        security_group.add_ingress_rule(ec2.Peer.ipv4("0.0.0.0/0"), ec2.Port.tcp(5433), "Allow PostgreSQL port")
+        security_group.add_ingress_rule(ec2.Peer.ipv4("0.0.0.0/0"), ec2.Port.tcp(6380), "Allow Redis port")
+
+        # Create a role for the EC2 instance with ECR access
+        instance_role = iam.Role(self, "InstanceRole",
+            assumed_by=iam.ServicePrincipal("ec2.amazonaws.com")
+        )
+
+        # Add ECR policy to the role
+        instance_role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name("AmazonEC2ContainerRegistryFullAccess")
+        )
+
+        # Define the EC2 instance with the custom role
+        ec2_instance = ec2.Instance(self, "Instance",
+            instance_type=ec2.InstanceType("t2.micro"),
+            machine_image=ec2.MachineImage.latest_amazon_linux2(),
+            vpc=vpc,
+            security_group=security_group,
+            key_name="rsakey",
+            role=instance_role,  # Assign the role with ECR permissions
+            user_data=ec2.UserData.custom(self._get_user_data())
+        )
+
+        # Add a Name Tag to EC2 instance
+        Tags.of(ec2_instance).add("Name", "Ec2BookingSystemInstance")
 
         # Output the instance ID and public IP
         CfnOutput(self, "InstanceId", value=ec2_instance.instance_id)
@@ -63,11 +120,25 @@ systemctl start docker
 systemctl enable docker
 usermod -a -G docker ec2-user
 
-# Install AWS CLI v2 if needed
+# Install Docker Compose
+curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+
+# Install AWS CLI v2
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 unzip -q awscliv2.zip
 ./aws/install --update
 rm -rf aws awscliv2.zip
+
+# Install additional dependencies
+yum install -y jq unzip
+
+# Create application directory
+mkdir -p /home/ec2-user/app
+chown ec2-user:ec2-user /home/ec2-user/app
+
+# Configure Docker to start on boot
+systemctl enable docker
 
 # Create a status file to signal instance is ready
 touch /tmp/instance_ready
