@@ -63,8 +63,7 @@ jobs:
 
       - name: Deploy CDK Stack
         working-directory: ./infra
-        run: cdk synth
-      #    cdk deploy --require-approval never
+        run: cdk deploy --require-approval never
 
       - name: Wait for EC2 Instance to be Ready
         id: wait-for-instance
