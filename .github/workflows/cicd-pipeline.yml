@@ -46,22 +46,25 @@ jobs:
           EOF
 
       - name: Build and Push Docker Images
+        env:
+          DOCKER_REGISTRY: ${REPOSITORY_URI}
+          TAG: ${IMAGE_TAG}
         run: |
           # Build the application image
           docker compose build web
-          
-          # Tag with version and latest
-          docker tag pawsey/ec2-provisioning:${IMAGE_TAG} ${REPOSITORY_URI}:${IMAGE_TAG}
-          docker tag pawsey/ec2-provisioning:${IMAGE_TAG} ${REPOSITORY_URI}:latest
-          
-          # Push both tags
+
+          # Tag for ECR
+          docker tag ${DOCKER_REGISTRY:-}django-booking-app:${TAG:-latest} ${REPOSITORY_URI}:${IMAGE_TAG}
+          docker tag ${DOCKER_REGISTRY:-}django-booking-app:${TAG:-latest} ${REPOSITORY_URI}:latest
+
+          # Push to ECR
           docker push ${REPOSITORY_URI}:${IMAGE_TAG}
           docker push ${REPOSITORY_URI}:latest
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.8'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: |
