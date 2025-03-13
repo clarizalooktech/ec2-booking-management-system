@@ -118,7 +118,7 @@ yum update -y
 amazon-linux-extras install docker -y
 systemctl start docker
 systemctl enable docker
-usermod -a -G docker ec2-user
+usermod -aG docker ec2-user
 
 # Install Docker Compose
 curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
@@ -130,19 +130,11 @@ unzip -q awscliv2.zip
 ./aws/install --update
 rm -rf aws awscliv2.zip
 
-# Install additional dependencies
-yum install -y jq unzip
-
 # Create application directory
 mkdir -p /home/ec2-user/app
 chown ec2-user:ec2-user /home/ec2-user/app
 
-# Configure Docker to start on boot
-systemctl enable docker
-
-# Create a status file to signal instance is ready
+# Signal completion
 touch /tmp/instance_ready
-
-# Log completion
 echo "Instance setup complete"
 """

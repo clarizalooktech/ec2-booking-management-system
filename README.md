@@ -76,3 +76,9 @@ To run the application using Docker:
 To run tests:
 ```sh
 python manage.py test
+
+
+### Screenshots
+![Deploying Ec2](https://github.com/clarizalooktech/ec2-booking-management-system/blob/feature/create-cicd-pipeline/images/deploy-step.png)
+
+![Stack in the AWS Console](https://github.com/clarizalooktech/ec2-booking-management-system/blob/feature/create-cicd-pipeline/images/aws-console-ec2-booking-stack.png)

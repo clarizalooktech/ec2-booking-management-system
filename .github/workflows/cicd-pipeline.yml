@@ -143,22 +143,29 @@ jobs:
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.yml ec2-user@${INSTANCE_IP}:~/
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env ec2-user@${INSTANCE_IP}:~/
 
-      - name: SSH into EC2 and Deploy with Docker Compose
-        env:
-          INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
-          REPO_URI: ${{ secrets.ECR_REPOSITORY_URI }}
-        run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@${INSTANCE_IP} "
-            # Login to ECR
-            aws ecr get-login-password --region ap-southeast-2 | sudo docker login --username AWS --password-stdin ${REPO_URI}
+          - name: SSH into EC2 and Deploy with Docker Compose
+          env:
+            INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
+            REPO_URI: ${{ secrets.ECR_REPOSITORY_URI }}
+          run: |
+            # Wait for Docker to be available
+            ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@${INSTANCE_IP} "
+              echo 'Waiting for Docker to be available...'
+              until sudo docker info > /dev/null 2>&1; do
+                sleep 5
+              done
+              echo 'Docker is ready'
 
-            # Stop existing containers
-            sudo docker compose down || true
+              # Login to ECR
+              aws ecr get-login-password --region ap-southeast-2 | sudo docker login --username AWS --password-stdin ${REPO_URI}
 
-            # Pull and start new containers
-            sudo docker compose pull
-            sudo docker compose up -d
+              # Stop existing containers
+              sudo docker compose down || true
 
-            # Clean up old images
-            sudo docker image prune -f
-          "
+              # Pull and start new containers
+              sudo docker compose pull
+              sudo docker compose up -d
+
+              # Clean up old images
+              sudo docker image prune -f
+            "
