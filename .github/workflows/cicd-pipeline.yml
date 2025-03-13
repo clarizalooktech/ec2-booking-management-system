@@ -40,10 +40,10 @@ jobs:
           docker build -t $REPOSITORY_URI:$IMAGE_TAG .
           docker push $REPOSITORY_URI:$IMAGE_TAG
 
-          - name: Set up Python
-          uses: actions/setup-python@v2
-          with:
-            python-version: '3.8'
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'
 
       - name: Install dependencies
         run: |
