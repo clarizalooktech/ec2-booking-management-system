@@ -35,14 +35,33 @@ jobs:
           mask-password: true
 
       - name: Create .env file
+        env:
+          POSTGRES_DB: ${{ vars.POSTGRES_DB }}
+          POSTGRES_USER: ${{ vars.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DEBUG: ${{ vars.DEBUG }}
+          ALLOWED_HOSTS: ${{ vars.ALLOWED_HOSTS }}
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_PORT: ${{ vars.DB_PORT }}
+          TIME_ZONE: ${{ vars.TIME_ZONE }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION }}
         run: |
           cat << EOF > .env
-          POSTGRES_DB=booking
-          POSTGRES_USER=pawsey
-          POSTGRES_PASSWORD=pawsey
+          POSTGRES_DB=${POSTGRES_DB}
+          POSTGRES_USER=${POSTGRES_USER}
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
           DJANGO_SETTINGS_MODULE=booking_management.settings
-          DATABASE_URL=postgresql://pawsey:pawsey@db:5432/booking
-          REDIS_URL=redis://redis:6379/0
+          DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${POSTGRES_DB}
+          SECRET_KEY=${DJANGO_SECRET_KEY}
+          DEBUG=${DEBUG}
+          ALLOWED_HOSTS=${ALLOWED_HOSTS}
+          TIME_ZONE=${TIME_ZONE}
+          AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+          AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+          AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
           EOF
 
       - name: Build and Push Docker Images
@@ -74,31 +93,31 @@ jobs:
 
       - name: Deploy CDK Stack
         working-directory: ./infra
-        run: cdk synth --require-approval never
+        run: cdk diff --require-approval never
 
-      - name: Wait for EC2 Instance to be Ready
-        id: wait-for-instance
-        run: |
-          # Get the instance ID from CDK outputs
-          STACK_OUTPUTS=$(aws cloudformation describe-stacks --stack-name Ec2-Booking-Management-Stack --query "Stacks[0].Outputs" --output json)
-          INSTANCE_ID=$(echo $STACK_OUTPUTS | jq -r '.[] | select(.OutputKey=="InstanceId") | .OutputValue')
-          INSTANCE_IP=$(echo $STACK_OUTPUTS | jq -r '.[] | select(.OutputKey=="InstancePublicIp") | .OutputValue')
+      # - name: Wait for EC2 Instance to be Ready
+      #   id: wait-for-instance
+      #   run: |
+      #     # Get the instance ID from CDK outputs
+      #     STACK_OUTPUTS=$(aws cloudformation describe-stacks --stack-name Ec2-Booking-Management-Stack --query "Stacks[0].Outputs" --output json)
+      #     INSTANCE_ID=$(echo $STACK_OUTPUTS | jq -r '.[] | select(.OutputKey=="InstanceId") | .OutputValue')
+      #     INSTANCE_IP=$(echo $STACK_OUTPUTS | jq -r '.[] | select(.OutputKey=="InstancePublicIp") | .OutputValue')
 
-          # Fallback to searching by tag if outputs aren't available
-          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" == "null" ]; then
-            echo "Looking up instance by tag..."
-            INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=DjangoInstance" "Name=instance-state-name,Values=pending,running" --query "Reservations[0].Instances[0].InstanceId" --output text)
+      #     # Fallback to searching by tag if outputs aren't available
+      #     if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" == "null" ]; then
+      #       echo "Looking up instance by tag..."
+      #       INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=DjangoInstance" "Name=instance-state-name,Values=pending,running" --query "Reservations[0].Instances[0].InstanceId" --output text)
 
-            if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" == "None" ]; then
-              echo "Error: No running EC2 instance with tag 'DjangoInstance' found."
-              exit 1
-            fi
+      #       if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" == "None" ]; then
+      #         echo "Error: No running EC2 instance with tag 'DjangoInstance' found."
+      #         exit 1
+      #       fi
 
-            INSTANCE_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
-          fi
+      #       INSTANCE_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
+      #     fi
 
-          echo "Found instance $INSTANCE_ID with IP $INSTANCE_IP"
-          echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
+      #     echo "Found instance $INSTANCE_ID with IP $INSTANCE_IP"
+      #     echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
 
   # deploy:
   #   needs: build-docker-setup-infra
