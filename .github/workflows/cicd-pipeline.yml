@@ -48,18 +48,16 @@ jobs:
       - name: Build and Push Docker Images
         env:
           DOCKER_REGISTRY: ${{ secrets.ECR_REPOSITORY_URI }}
-          TAG: 1.1.0
+          COMMIT_HASH: ${{ github.sha }}
         run: |
           # Build the application image
-          docker compose build web
+          docker build -t django-booking-app:latest .
 
-          # Tag for ECR
-          docker tag django-booking-app:latest ${{ secrets.ECR_REPOSITORY_URI }}:1.1.0
-          docker tag django-booking-app:latest ${{ secrets.ECR_REPOSITORY_URI }}:latest
+          # Tag with commit hash (last 7 characters) and latest
+          docker tag django-booking-app:latest ${{ secrets.ECR_REPOSITORY_URI }}:${COMMIT_HASH::7}
 
           # Push to ECR
-          docker push ${{ secrets.ECR_REPOSITORY_URI }}:1.1.0
-          docker push ${{ secrets.ECR_REPOSITORY_URI }}:latest
+          docker push ${{ secrets.ECR_REPOSITORY_URI }}:${COMMIT_HASH::7}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -76,7 +74,7 @@ jobs:
 
       - name: Deploy CDK Stack
         working-directory: ./infra
-        run: cdk deploy --require-approval never
+        run: cdk synth --require-approval never
 
       - name: Wait for EC2 Instance to be Ready
         id: wait-for-instance
@@ -102,70 +100,67 @@ jobs:
           echo "Found instance $INSTANCE_ID with IP $INSTANCE_IP"
           echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
 
-  deploy:
-    needs: build-docker-setup-infra
-    runs-on: ubuntu-latest
+  # deploy:
+  #   needs: build-docker-setup-infra
+  #   runs-on: ubuntu-latest
 
-    env:
-      REPOSITORY_URI: ${{ secrets.ECR_REPOSITORY_URI }}
+  #   env:
+  #     REPOSITORY_URI: ${{ secrets.ECR_REPOSITORY_URI }}
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+  #   steps:
+  #     - name: Checkout Code
+  #       uses: actions/checkout@v3
 
-      - name: Install SSH Client
-        run: sudo apt-get install -y openssh-client
+  #     - name: Install SSH Client
+  #       run: sudo apt-get install -y openssh-client
 
-      - name: Create .ssh Directory
-        run: mkdir -p ~/.ssh
+  #     - name: Create .ssh Directory
+  #       run: mkdir -p ~/.ssh
 
-      - name: Add SSH Key
-        run: |
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keygen -lf ~/.ssh/id_rsa || echo "Key verification failed"
+  #     - name: Add SSH Key
+  #       run: |
+  #         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+  #         chmod 600 ~/.ssh/id_rsa
+  #         ssh-keygen -lf ~/.ssh/id_rsa || echo "Key verification failed"
 
-      - name: Create .env file for deployment
-        run: |
-          cat << EOF > .env
-          POSTGRES_DB=booking
-          POSTGRES_USER=pawsey
-          POSTGRES_PASSWORD=pawsey
-          DJANGO_SETTINGS_MODULE=booking_management.settings
-          DATABASE_URL=postgresql://pawsey:pawsey@db:5432/booking
-          REDIS_URL=redis://redis:6379/0
-          EOF
+  #     - name: Create .env file for deployment
+  #       run: |
+  #         cat << EOF > .env
+  #         POSTGRES_DB=booking
+  #         POSTGRES_USER=pawsey
+  #         POSTGRES_PASSWORD=pawsey
+  #         DJANGO_SETTINGS_MODULE=booking_management.settings
+  #         DATABASE_URL=postgresql://pawsey:pawsey@db:5432/booking
+  #         REDIS_URL=redis://redis:6379/0
+  #         EOF
 
-      - name: Copy Docker Compose Files
-        env:
-          INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
-        run: |
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.yml ec2-user@${INSTANCE_IP}:~/
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env ec2-user@${INSTANCE_IP}:~/
+  #     - name: Copy Docker Compose Files
+  #       env:
+  #         INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
+  #       run: |
+  #         scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.yml ec2-user@${INSTANCE_IP}:~/
+  #         scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env ec2-user@${INSTANCE_IP}:~/
 
-          - name: SSH into EC2 and Deploy with Docker Compose
-          env:
-            INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
-            REPO_URI: ${{ secrets.ECR_REPOSITORY_URI }}
-          run: |
-            # Wait for Docker to be available
-            ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@${INSTANCE_IP} "
-              echo 'Waiting for Docker to be available...'
-              until sudo docker info > /dev/null 2>&1; do
-                sleep 5
-              done
-              echo 'Docker is ready'
+  #         - name: SSH into EC2 and Deploy with Docker Compose
+  #         env:
+  #           INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
+  #           REPO_URI: ${{ secrets.ECR_REPOSITORY_URI }}
+  #         run: |
+  #           # Wait for Docker to be available
+  #           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@${INSTANCE_IP} "
+  #             echo 'Waiting for Docker to be available...'
+  #             until sudo docker info > /dev/null 2>&1; do
+  #               sleep 5
+  #             done
+  #             echo 'Docker is ready'
 
-              # Login to ECR
-              aws ecr get-login-password --region ap-southeast-2 | sudo docker login --username AWS --password-stdin ${REPO_URI}
+  #             # Login to ECR
+  #             aws ecr get-login-password --region ap-southeast-2 | sudo docker login --username AWS --password-stdin ${REPO_URI}
 
-              # Stop existing containers
-              sudo docker compose down || true
+  #             # Pull image of application
+  #             # Pull db, nginx and redis images
+  #             # Setup their own containers inside the ec2
+  #             # Run the application just like docker compose
+  #             # Output the link of the application
 
-              # Pull and start new containers
-              sudo docker compose pull
-              sudo docker compose up -d
-
-              # Clean up old images
-              sudo docker image prune -f
-            "
+  #           "
