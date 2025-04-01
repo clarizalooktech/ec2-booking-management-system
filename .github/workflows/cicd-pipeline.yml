@@ -34,36 +34,6 @@ jobs:
         with:
           mask-password: true
 
-      - name: Create .env file
-        env:
-          POSTGRES_DB: ${{ vars.POSTGRES_DB }}
-          POSTGRES_USER: ${{ vars.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-          DEBUG: ${{ vars.DEBUG }}
-          ALLOWED_HOSTS: ${{ vars.ALLOWED_HOSTS }}
-          DB_HOST: ${{ vars.DB_HOST }}
-          DB_PORT: ${{ vars.DB_PORT }}
-          TIME_ZONE: ${{ vars.TIME_ZONE }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-southeast-2
-        run: |
-          cat << EOF > .env
-          POSTGRES_DB=${POSTGRES_DB}
-          POSTGRES_USER=${POSTGRES_USER}
-          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-          DJANGO_SETTINGS_MODULE=booking_management.settings
-          DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${POSTGRES_DB}
-          SECRET_KEY=${DJANGO_SECRET_KEY}
-          DEBUG=${DEBUG}
-          ALLOWED_HOSTS=${ALLOWED_HOSTS}
-          TIME_ZONE=${TIME_ZONE}
-          AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-          AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-          AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
-          EOF
-
       - name: Build and Push Docker Images
         env:
           DOCKER_REGISTRY: ${{ secrets.ECR_REPOSITORY_URI }}
@@ -119,67 +89,99 @@ jobs:
           echo "Found instance $INSTANCE_ID with IP $INSTANCE_IP"
           echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
 
-  # deploy:
-  #   needs: build-docker-setup-infra
-  #   runs-on: ubuntu-latest
+  deploy:
+    needs: build-docker-setup-infra
+    runs-on: ubuntu-latest
 
-  #   env:
-  #     REPOSITORY_URI: ${{ secrets.ECR_REPOSITORY_URI }}
+    env:
+      REPOSITORY_URI: ${{ secrets.ECR_REPOSITORY_URI }}
 
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v3
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-  #     - name: Install SSH Client
-  #       run: sudo apt-get install -y openssh-client
+      - name: Install SSH Client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-client
 
-  #     - name: Create .ssh Directory
-  #       run: mkdir -p ~/.ssh
+      - name: Create .ssh Directory
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
 
-  #     - name: Add SSH Key
-  #       run: |
-  #         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-  #         chmod 600 ~/.ssh/id_rsa
-  #         ssh-keygen -lf ~/.ssh/id_rsa || echo "Key verification failed"
+      - name: Add SSH Key
+        run: |
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keygen -lf ~/.ssh/id_rsa || echo "Key verification failed"
 
-  #     - name: Create .env file for deployment
-  #       run: |
-  #         cat << EOF > .env
-  #         POSTGRES_DB=booking
-  #         POSTGRES_USER=pawsey
-  #         POSTGRES_PASSWORD=pawsey
-  #         DJANGO_SETTINGS_MODULE=booking_management.settings
-  #         DATABASE_URL=postgresql://pawsey:pawsey@db:5432/booking
-  #         REDIS_URL=redis://redis:6379/0
-  #         EOF
+      - name: Create .env file
+        env:
+          POSTGRES_DB: ${{ vars.POSTGRES_DB }}
+          POSTGRES_USER: ${{ vars.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DEBUG: ${{ vars.DEBUG }}
+          ALLOWED_HOSTS: ${{ vars.ALLOWED_HOSTS }}
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_PORT: ${{ vars.DB_PORT }}
+          TIME_ZONE: ${{ vars.TIME_ZONE }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-southeast-2
+        run: |
+          cat << EOF > .env
+          POSTGRES_DB=${POSTGRES_DB}
+          POSTGRES_USER=${POSTGRES_USER}
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+          DJANGO_SETTINGS_MODULE=booking_management.settings
+          DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${DB_HOST}:${DB_PORT}/${POSTGRES_DB}
+          SECRET_KEY=${DJANGO_SECRET_KEY}
+          DEBUG=${DEBUG}
+          ALLOWED_HOSTS=${ALLOWED_HOSTS}
+          TIME_ZONE=${TIME_ZONE}
+          AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+          AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+          AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+          EOF
 
-  #     - name: Copy Docker Compose Files
-  #       env:
-  #         INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
-  #       run: |
-  #         scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.yml ec2-user@${INSTANCE_IP}:~/
-  #         scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env ec2-user@${INSTANCE_IP}:~/
+      - name: Copy Docker Compose Files
+        env:
+          INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
+        run: |
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.yml ec2-user@${INSTANCE_IP}:~/
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env ec2-user@${INSTANCE_IP}:~/
 
-  #         - name: SSH into EC2 and Deploy with Docker Compose
-  #         env:
-  #           INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
-  #           REPO_URI: ${{ secrets.ECR_REPOSITORY_URI }}
-  #         run: |
-  #           # Wait for Docker to be available
-  #           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@${INSTANCE_IP} "
-  #             echo 'Waiting for Docker to be available...'
-  #             until sudo docker info > /dev/null 2>&1; do
-  #               sleep 5
-  #             done
-  #             echo 'Docker is ready'
+      - name: SSH into EC2 and Deploy Application
+        env:
+          INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
+          REPO_URI: ${{ secrets.ECR_REPOSITORY_URI }}
+        run: |
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@${INSTANCE_IP} "
+            # Wait for Docker
+            echo 'Waiting for Docker to be available...'
+            until sudo docker info > /dev/null 2>&1; do
+              sleep 5
+            done
+            echo 'Docker is ready'
 
-  #             # Login to ECR
-  #             aws ecr get-login-password --region ap-southeast-2 | sudo docker login --username AWS --password-stdin ${REPO_URI}
+            # Login to ECR
+            aws ecr get-login-password --region ap-southeast-2 | sudo docker login --username AWS --password-stdin ${REPO_URI}
 
-  #             # Pull image of application
-  #             # Pull db, nginx and redis images
-  #             # Setup their own containers inside the ec2
-  #             # Run the application just like docker compose
-  #             # Output the link of the application
+            # Stop existing containers
+            sudo docker compose down || true
 
-  #           "
+            # Pull all images
+            sudo docker compose pull
+
+            # Start all containers
+            sudo docker compose up -d
+
+            # Clean up old images
+            sudo docker image prune -f
+
+            # Output application URL
+            echo 'Application deployed successfully!'
+            echo 'Access the application at: http://'$(curl -s ifconfig.me):8001
+          "
