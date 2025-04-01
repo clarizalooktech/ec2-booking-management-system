@@ -24,7 +24,7 @@ services:
     #   - redis_data:/data
 
   web:
-    image: django-booking-app:latest
+    image: 586794455762.dkr.ecr.ap-southeast-2.amazonaws.com/pawsey/ec2-provisioning:1.1.0
     build:
       context: .
       args:
