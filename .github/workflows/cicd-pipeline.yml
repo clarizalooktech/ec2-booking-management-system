@@ -159,7 +159,22 @@ jobs:
           REPO_URI: ${{ secrets.ECR_REPOSITORY_URI }}
           COMMIT_HASH: ${{ github.sha }}
         run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@${INSTANCE_IP} "
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@${INSTANCE_IP}  "
+            # Create app directory on EC2
+            mkdir -p ~/ec2-booking
+
+            # Copy all project files excluding unnecessary directories
+            rsync -av -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+              --exclude '.git' \
+              --exclude 'venv' \
+              --exclude '__pycache__' \
+              --exclude '*.pyc' \
+              --exclude 'node_modules' \
+              ./ ec2-user@${INSTANCE_IP}:~/ec2-booking/
+
+             # Login to ECR
+            aws ecr get-login-password --region ap-southeast-2 | sudo docker login --username AWS --password-stdin ${REPO_URI}
+
             # 1. Update packages
             sudo yum update -y
 
