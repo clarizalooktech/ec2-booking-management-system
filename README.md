@@ -76,7 +76,19 @@ To run the application using Docker:
 To run tests:
 ```sh
 python manage.py test
+```
 
+## CICD Pipeline
+
+The `build-docker-setup-infra` job handles:
+- Building Docker image
+- Pushing to ECR
+- Setting up infrastructure (base vm to execute the docker compose)
+
+The `deploy` job handles:
+- Environment configuration
+- File transfers to EC2
+- Application deployment
 
 ### Screenshots
 ![Deploying Ec2](https://github.com/clarizalooktech/ec2-booking-management-system/blob/feature/create-cicd-pipeline/images/deploy-step.png)

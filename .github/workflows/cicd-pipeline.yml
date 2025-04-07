@@ -34,7 +34,7 @@ jobs:
         with:
           mask-password: true
 
-      - name: Build and Push Docker Images
+      - name: Build and Push Docker Image for Application
         env:
           DOCKER_REGISTRY: ${{ secrets.ECR_REPOSITORY_URI }}
           COMMIT_HASH: ${{ github.sha }}
@@ -89,7 +89,7 @@ jobs:
           echo "Found instance $INSTANCE_ID with IP $INSTANCE_IP"
           echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
 
-  deploy:
+  deploy-application:
     needs: build-docker-setup-infra
     runs-on: ubuntu-latest
 
@@ -157,31 +157,39 @@ jobs:
         env:
           INSTANCE_IP: ${{ needs.build-docker-setup-infra.outputs.instance_ip }}
           REPO_URI: ${{ secrets.ECR_REPOSITORY_URI }}
+          COMMIT_HASH: ${{ github.sha }}
         run: |
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@${INSTANCE_IP} "
-            # Wait for Docker
-            echo 'Waiting for Docker to be available...'
-            until sudo docker info > /dev/null 2>&1; do
-              sleep 5
-            done
-            echo 'Docker is ready'
+            # Update packages
+            sudo apt-get update
 
-            # Login to ECR
-            aws ecr get-login-password --region ap-southeast-2 | sudo docker login --username AWS --password-stdin ${REPO_URI}
+            # Install Python 3.9
+            sudo apt install -y python3.9 python3-pip
 
-            # Stop existing containers
-            sudo docker compose down || true
+            # Create virtual environment
+            python3.9 -m venv /home/ec2-user/venv
+            source /home/ec2-user/venv/bin/activate
 
-            # Pull all images
-            sudo docker compose pull
+            # Install dependencies
+            pip install -r /home/ec2-user/requirements.txt
 
-            # Start all containers
-            sudo docker compose up -d
+            # Set environment variables
+            export DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
+            export DEBUG=True
+            export ALLOWED_HOSTS=localhost,127.0.0.1
+            export DB_NAME=your_db_name
+            export DB_USER=your_db_user
+            export DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            export DB_HOST=your_db_host
+            export DB_PORT=5432
+            export TIME_ZONE=your_time_zone
+            export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+            export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            export AWS_DEFAULT_REGION=your_aws_default_region
 
-            # Clean up old images
-            sudo docker image prune -f
+            # Run database migrations
+            python manage.py migrate
 
-            # Output application URL
-            echo 'Application deployed successfully!'
-            echo 'Access the application at: http://'$(curl -s ifconfig.me):8001
+            # Start the development server
+            python manage.py runserver 0.0.0.0:8000
           "

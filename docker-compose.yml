@@ -24,7 +24,7 @@ services:
     #   - redis_data:/data
 
   web:
-    image: 586794455762.dkr.ecr.ap-southeast-2.amazonaws.com/pawsey/ec2-provisioning:1.1.0
+    image: ${ECR_REPOSITORY_URI}:${IMAGE_TAG:-latest}
     build:
       context: .
       args:
